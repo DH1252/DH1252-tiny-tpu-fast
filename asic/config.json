@@ -1,0 +1,21 @@
+{
+    "DESIGN_NAME": "ttf_asic_top",
+    "VERILOG_FILES": [
+        "dir::../rtl/ttf_pe.v",
+        "dir::../rtl/ttf_array.v",
+        "dir::../rtl/ttf_ram.v",
+        "dir::../rtl/ttf_dly.v",
+        "dir::../rtl/ttf_post.v",
+        "dir::../rtl/ttf_seq.v",
+        "dir::../rtl/ttf_core.v",
+        "dir::ttf_asic_top.v"
+    ],
+    "CLOCK_PORT": "clk",
+    "CLOCK_PERIOD": 10.0,
+    "SYNTH_STRATEGY": "DELAY 1",
+    "FP_CORE_UTIL": 45,
+    "PL_TARGET_DENSITY": 0.55,
+    "PL_RESIZER_TIMING_OPTIMIZATIONS": true,
+    "GLB_RESIZER_TIMING_OPTIMIZATIONS": true,
+    "RUN_CVC": false
+}

@@ -30,6 +30,7 @@ module ttf_core #(
     parameter ACC_W = 32,
     parameter AW_A  = 11,
     parameter AW_W  = 13,
+    parameter W_D   = 1 << AW_W,   // WGT rows actually built (block RAM budget)
     parameter AW_M  = 6,
     parameter AW_B  = 8,
     parameter AW_D  = 6
@@ -155,7 +156,7 @@ module ttf_core #(
                     assign t = wd_t[(AW_W+1)*(g*G-1) +: AW_W+1];
                 end
                 wire [8*G-1:0] q;
-                ttf_ram #(.W(8 * G), .AW(AW_W)) u_ram (
+                ttf_ram #(.W(8 * G), .AW(AW_W), .D(W_D)) u_ram (
                     .clk(clk),
                     .we(hw & r_wgt & (((g * G) >> 2) == h_q)),
                     .wa(h_row_w[AW_W-1:0]),
@@ -173,7 +174,7 @@ module ttf_core #(
             end
         end else begin : g_w1
             wire [8*N-1:0] q;
-            ttf_ram #(.W(8 * N), .AW(AW_W)) u_ram (
+            ttf_ram #(.W(8 * N), .AW(AW_W), .D(W_D)) u_ram (
                 .clk(clk), .we(hw & r_wgt), .wa(h_row_w[AW_W-1:0]), .wd(h_wd[8*N-1:0]),
                 .re(e_wv), .ra(e_wa), .q(q));
             for (l = 0; l < N; l = l + 1) begin : g_lane

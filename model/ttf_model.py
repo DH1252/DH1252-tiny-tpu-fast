@@ -146,6 +146,52 @@ class Image:
         return out
 
 
+# ------------------------------------------------------------------------------- host bus
+
+A_WGT, A_ACT, A_BIAS, A_DESC = 0x0000, 0x8000, 0xC000, 0xE000
+A_ID, A_CTRL, A_STATUS, A_CYCLES, A_PARAMS, A_SIZES = 0xF000, 0xF001, 0xF002, 0xF003, 0xF004, 0xF005
+
+
+def pack4(lanes):
+    return sum((v & 0xFF) << (8 * i) for i, v in enumerate(lanes))
+
+
+def bus_writes(img, inputs_only=False):
+    """[(address, data)] that load an Image through the host bus (ttf_core's map)"""
+    n, q = img.n, img.n // 4
+    out = []
+    if not inputs_only:
+        for row in sorted(img.wgt):
+            out += [(A_WGT + row * q + i, pack4(img.wgt[row][4 * i:4 * i + 4])) for i in range(q)]
+        for row in sorted(img.bias):
+            out += [(A_BIAS + row * n + c, img.bias[row][c] & 0xFFFFFFFF) for c in range(n)]
+        out += [(A_DESC + i, w) for i, w in enumerate(img.desc)]
+    for row in sorted(img.act):
+        out += [(A_ACT + row * q + i, pack4(img.act[row][4 * i:4 * i + 4])) for i in range(q)]
+    q_ok = img.w_rows * q <= A_ACT and img.b_rows * n <= A_DESC - A_BIAS
+    assert q_ok and len(img.desc) <= 0x1000, "the image does not fit the bus map"
+    return out
+
+
+def bus_output_words(img):
+    """the bus addresses of the last layer's output rows"""
+    q = img.n // 4
+    return [A_ACT + a * q + i for a in img.output_addrs() for i in range(q)]
+
+
+def unpack_output(img, words):
+    """words read at bus_output_words(img) -> m rows of logits"""
+    q = img.n // 4
+    act = {}
+    for j, a in enumerate(img.output_addrs()):
+        lanes = []
+        for i in range(q):
+            w = words[j * q + i]
+            lanes += [wrap((w >> (8 * b)) & 0xFF, 8) for b in range(4)]
+        act[a] = lanes
+    return img.read_output(act)
+
+
 # ------------------------------------------------------------------------------- RTL mirror
 
 

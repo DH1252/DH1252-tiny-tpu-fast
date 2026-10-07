@@ -1,0 +1,26 @@
+// tangnano20k.cst - pins of boards/tn20k/ttf_tn20k_top.v (via ttf_gowin_top) on the Sipeed
+// Tang Nano 20K (GW2AR-LV18QN88C8/I7):
+//   clk      27 MHz crystal oscillator
+//   uart_*   the BL616 USB-to-UART bridge (the board's USB-C port)
+//   led_n    the six LEDs, active low
+
+IO_LOC  "clk" 4;
+IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+IO_LOC  "uart_rx" 70;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC  "uart_tx" 69;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+
+IO_LOC  "led_n[0]" 15;
+IO_LOC  "led_n[1]" 16;
+IO_LOC  "led_n[2]" 17;
+IO_LOC  "led_n[3]" 18;
+IO_LOC  "led_n[4]" 19;
+IO_LOC  "led_n[5]" 20;
+IO_PORT "led_n[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "led_n[1]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "led_n[2]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "led_n[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "led_n[4]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "led_n[5]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;

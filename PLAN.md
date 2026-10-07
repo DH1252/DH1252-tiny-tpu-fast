@@ -84,10 +84,24 @@ Simulation and synthesis run locally, not in the cloud sessions.
   strategy.
 - Power signed off with switching activity from the MNIST run.
 
-## Decisions still open
+## Status
 
-- **Number format.** int8 inference only, or keep training (gradient descent and the
-  loss in the VPU need Q8.8 or wider)? This decides the PE, the VPU and most of the
-  savings.
-- **Array size on the ASIC.** Set by the area budget (a Tiny Tapeout or Caravel slot,
+The int8 inference core is in `rtl/` (every change from the baseline: `docs/CHANGES.md`).
+Written and checked against the clock-level model (`model/ttf_model.py`), not yet simulated
+as HDL or synthesized:
+
+| Phase | State |
+|---|---|
+| 0. Baseline numbers | scripts for the new core ready (`fast.mk`: sim, tn20k, asic); to run locally, for both designs |
+| 1. Processing element | done: int8, exact partial sums, PIPE option, enables, control-only reset |
+| 2. Array | done: N = 4, 8, 16; diagonal weight load, no stall between tiles |
+| 3. Memory | split into per-lane RAMs (inferred); SRAM macros for the ASIC still to do |
+| 4. Clock gating | clock enables in place; gating cells still to do |
+| 5. Control | done: descriptor RAM and sequencer |
+| 6. ASIC closure | `asic/config.json` (10 ns), not run |
+
+## Decisions
+
+- **Number format:** int8, inference only (decided).
+- **Array size on the ASIC:** open; set by the area budget (a Tiny Tapeout or Caravel slot,
   or a free size).
