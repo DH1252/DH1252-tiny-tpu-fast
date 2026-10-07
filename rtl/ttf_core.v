@@ -202,6 +202,7 @@ module ttf_core #(
         .clk(clk), .rst(rst), .a_in(act_q), .a_v(a_v), .w_bus(w_bus), .w_tok(tk_t), .ps(ps));
 
     // ---------------------------------------------------------------- output lanes
+    wire [ACC_W-1:0] hb_wd = $signed(h_wd);      // a bias word, sign-extended or cut to ACC_W
     generate
         for (c = 0; c < N; c = c + 1) begin : g_post
             wire [4:0] f = fl_t[5*(OUT_D + c - 2) +: 5];    // tap OUT_D + c - 1
@@ -212,7 +213,7 @@ module ttf_core #(
                 .o_base(o_base), .nb_n(nb_o), .b_base(b_base),
                 .s0(s0), .mult(mult), .s1(s1), .relu(relu),
                 .hb_we(hw & r_bias & (h_c == c)), .hb_wa(h_row_b[AW_B-1:0]),
-                .hb_wd({{(ACC_W > 32 ? ACC_W - 32 : 1){h_wd[31]}}, h_wd} ),
+                .hb_wd(hb_wd),
                 .o_we(o_we[c]), .o_wa(o_wa[AW_A*c +: AW_A]), .o_wd(o_wd[8*c +: 8]));
         end
     endgenerate

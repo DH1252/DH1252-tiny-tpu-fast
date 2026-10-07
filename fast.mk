@@ -4,6 +4,7 @@
 #   make -f fast.mk model            clock-level model vs. the layer arithmetic (Python)
 #   make -f fast.mk quant MNIST=DIR  re-quantize the MNIST model (numpy; MNIST idx files in DIR)
 #   make -f fast.mk sim [M=8] [RANDOM=seed] [VERILATOR=1]   RTL testbench (iverilog or Verilator)
+#   make -f fast.mk sim-board [RANDOM=1 M=4] [CLKGATE=0]   the board top over its UART
 #   make -f fast.mk tn20k [CLK_MHZ=100] [BAUD=3000000] [N=8 G=4 ...]   Tang Nano 20K bitstream
 #       tool settings: GOAL MAP DSP PLACE ROUTE RETIME SYN_MARGIN MAX_FANOUT GW_OPTS
 #       (boards/tn20k/ttf_gowin.tcl; defaults for speed, e.g. PLACE=3 or 4 to try harder)
@@ -21,7 +22,7 @@ OPENLANE  ?= openlane
 RTL       := $(sort $(wildcard rtl/ttf_*.v))
 SIMDIR    := $(BUILD)/sim
 
-.PHONY: model quant image sim tn20k host asic clean-fast
+.PHONY: model quant image sim sim-board tn20k host asic clean-fast
 
 model:
 	$(PY) model/ttf_model.py
@@ -44,6 +45,13 @@ else
 	vvp -n $(SIMDIR)/tb.vvp | tee $(SIMDIR)/sim.log
 endif
 	@grep -q "^PASS" $(SIMDIR)/sim.log
+
+# the board top over its UART (bridge, bursts, reply FIFO, clock gate); CLKGATE=0 without the gate
+sim-board: image
+	iverilog -g2005 -s tb_ttf_board -Ptb_ttf_board.DIR='"$(SIMDIR)"' -Ptb_ttf_board.CLKGATE=$(or $(CLKGATE),1) \
+	    -o $(SIMDIR)/tbb.vvp $(RTL) boards/tn20k/ttf_tn20k_top.v sim/ttf_dqce_sim.v sim/tb_ttf_board.v
+	vvp -n $(SIMDIR)/tbb.vvp | tee $(SIMDIR)/simb.log
+	@grep -q "^PASS" $(SIMDIR)/simb.log
 
 tn20k:
 	QT_QPA_PLATFORM=$${QT_QPA_PLATFORM:-offscreen} QT_XCB_GL_INTEGRATION=none LIBGL_ALWAYS_SOFTWARE=1 \
