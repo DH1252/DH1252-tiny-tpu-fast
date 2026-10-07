@@ -10,8 +10,22 @@
 // replies (tools/ttf_host.py keeps at most 16 reads in flight). Writes to the RAMs are
 // ignored while the core runs a program (ttf_core).
 //
-// LEDs (active low): 0 busy, 1 done, 2 heartbeat, 3 UART activity.
-// Everything runs on clk (CLK_HZ): the 27 MHz oscillator or the rPLL (boards/tn20k/ttf_gowin.tcl).
+// LEDs (active low): 0 busy, 1 done, 2 heartbeat, 3 UART activity, 4 core clock running.
+// clk (CLK_HZ) is the 27 MHz oscillator or the rPLL (boards/tn20k/ttf_gowin.tcl).
+//
+// CLKGATE = 1: the core runs on its own copy of clk that stops while there is nothing for it
+// to do (Gowin's DQCE clock enable buffer, on the global clock network, so the whole core
+// and its block RAMs see no clock edges at all when idle). Only the UART bridge, the reset
+// and the LEDs here keep the free-running clk. The core's clock runs
+//   - during reset (its control flags reset synchronously),
+//   - while the bridge handles a command (from the command byte to the last reply byte: a
+//     write or read reaches the core at least six UART bytes, thousands of clocks, after
+//     the clock was turned on, so however many clocks DQCE takes to start does not matter),
+//   - while the core runs a program,
+//   - and HOLD clocks after the last of these (the read data, done and the counters settle).
+// The gated clock is clk through one buffer: same frequency and phase, so signals cross
+// between the two without synchronizers (the timing analyser checks the paths).
+// CLKGATE = 0: the core shares clk (simulation, other FPGAs).
 
 `default_nettype none
 
@@ -27,7 +41,9 @@ module ttf_tn20k_top #(
     parameter W_D    = 6400,
     parameter AW_M   = 4,
     parameter AW_B   = 4,
-    parameter AW_D   = 6
+    parameter AW_D   = 6,
+    parameter CLKGATE = 1,
+    parameter HOLD    = 16
 ) (
     input  wire       clk,
     input  wire       clk_ok,
@@ -191,9 +207,27 @@ module ttf_tn20k_top #(
         else if (h_we) w_addr <= w_addr + 1'b1;
     end
 
+    // ---------------------------------------------------------------- core clock gate
+    wire       clk_core;
+    reg        ce = 1'b1;
+    reg  [7:0] hold;
+    wire       need = rst | busy | (cs != C_IDLE) | h_we | h_re;
+    always @(posedge clk) begin
+        if (need)          hold <= HOLD;
+        else if (hold != 0) hold <= hold - 1'b1;
+        ce <= need | (hold != 0);
+    end
+    generate
+        if (CLKGATE) begin : g_cg
+            DQCE u_dqce (.CLKIN(clk), .CE(ce), .CLKOUT(clk_core));
+        end else begin : g_nocg
+            assign clk_core = clk;
+        end
+    endgenerate
+
     ttf_core #(.N(N), .G(G), .PIPE(PIPE), .ACC_W(ACC_W), .AW_A(AW_A), .AW_W(AW_W), .W_D(W_D),
                .AW_M(AW_M), .AW_B(AW_B), .AW_D(AW_D)) u_core (
-        .clk(clk), .rst(rst),
+        .clk(clk_core), .rst(rst),
         .h_we(h_we), .h_re(h_re), .h_a(h_re ? addr : w_addr), .h_wd(data),
         .h_rd(h_rd), .h_rv(h_rv), .busy(busy), .done(done));
 
@@ -205,7 +239,7 @@ module ttf_tn20k_top #(
         if (rx_stb) act <= 22'h3FFFFF;
         else if (act != 0) act <= act - 1'b1;
     end
-    assign led_n = ~{2'b00, act != 0, hb[24], done, busy};
+    assign led_n = ~{1'b0, ce, act != 0, hb[24], done, busy};
 endmodule
 
 `default_nettype wire

@@ -1,7 +1,8 @@
 > **tiny-tpu-fast** — a private working fork of tiny-tpu-v2/tiny-tpu (imported at 04ad692),
 > optimised for speed and energy per MAC: ASIC (sky130) target, Tang Nano 20K first.
 > See [PLAN.md](PLAN.md); the new int8 inference core is in `rtl/`, every change from the
-> baseline in [docs/CHANGES.md](docs/CHANGES.md), the commands in `fast.mk`.
+> baseline in [docs/CHANGES.md](docs/CHANGES.md) (explained from the start, for readers new to ML or
+> hardware: [docs/CHANGES_EXPLAINED.md](docs/CHANGES_EXPLAINED.md)), the commands in `fast.mk`.
 > Upstream has no licence: do not redistribute.
 
 # tiny-tpu

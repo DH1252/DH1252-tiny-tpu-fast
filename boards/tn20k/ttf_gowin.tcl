@@ -6,6 +6,7 @@
 #   CLK_MHZ  core clock from the rPLL, 4 - 200 MHz (default 27: the oscillator, no PLL)
 #   BAUD     UART rate (default 115200; the BL616 also does 3000000)
 #   N G PIPE ACC_W AW_A AW_W W_D AW_M AW_B AW_D   core parameters (ttf_tn20k_top defaults)
+#   CLKGATE  1 (default): stop the core's clock while idle (DQCE); 0: free-running
 #   STEP     all (default) or syn
 # Tool settings (defaults: built for speed with energy in mind, see "tool settings" below):
 #   GOAL       synthesis goal: timing (default), auto or area   (-opt_goal)
@@ -49,7 +50,7 @@ set PART  GW2AR-LV18QN88C8/I7
 
 set params {}
 set ptag   ""
-foreach p {N G PIPE ACC_W AW_A AW_W W_D AW_M AW_B AW_D} {
+foreach p {N G PIPE ACC_W AW_A AW_W W_D AW_M AW_B AW_D CLKGATE} {
   set v [env_or $p ""]
   if {$v ne ""} { lappend params ".$p\($v\)"; append ptag "_[string tolower $p]$v" }
 }

@@ -1,5 +1,7 @@
 # Changes from the baseline
 
+*New to machine learning or chip design? Start with [CHANGES_EXPLAINED.md](CHANGES_EXPLAINED.md).*
+
 **Baseline:** [tiny-tpu-v2/tiny-tpu](https://github.com/tiny-tpu-v2/tiny-tpu) at 04ad692, imported unchanged in the first commit.
 **New design:** `rtl/ttf_*.v`, an int8 core for inference only.
 
@@ -233,9 +235,25 @@ Baseline cycles per MNIST image have not been measured yet. That is phase 0 of `
 - **Also:** the end of the run prints the timing report's Fmax, the setup and hold violations, and the resource use.
 - **Status:** checked with a Tcl interpreter against stand-ins for the Gowin commands, both as the 2.1E guide documents them and as an older version without the 2.0E/2.1E options. Not run with gw_sh yet.
 
+### C19. The core's clock stops while it is idle (Tang Nano 20K)
+
+- **Baseline:** one free-running clock for everything.
+- **Now:** `boards/tn20k/ttf_tn20k_top.v` with `CLKGATE = 1` (the default) feeds the core through Gowin's DQCE clock buffer, enabled only:
+  - during reset;
+  - while the UART bridge handles a command;
+  - while a program runs;
+  - for 16 clocks after any of these.
+
+  The UART bridge, reset and LEDs stay on the free-running clock. LED 4 shows when the core's clock runs. `CLKGATE=0` restores one shared clock.
+- **Why:** an idle FPGA design still spends dynamic energy on every clock edge, in the clock network and in every register and block RAM it reaches. Stopping the clock at its source, the global buffer, removes all of that between inferences.
+- **Status:** elaborated with both settings, using a stand-in for DQCE.
+  - The Gowin primitive's exact enable latency comes from its port list (Yosys's GW2A cell library), not from Gowin's clock guide, which I couldn't download.
+  - The design doesn't depend on that latency: an access reaches the core thousands of clocks after the clock is turned on.
+  - Not built yet.
+
 ## Not done yet
 
 - HDL simulation, synthesis, Fmax and power for both designs. That is phase 0 of `PLAN.md`, run locally.
-- Clock-gating cells in place of the clock enables (phase 4).
+- Clock gating for the ASIC: integrated clock-gate cells in place of the clock enables, and a gate for the whole core like C19 (phase 4).
 - SRAM macros for the ASIC (phase 3).
 - Per-channel requantization. This would need a multiplier per output channel instead of per layer.

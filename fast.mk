@@ -48,7 +48,7 @@ endif
 tn20k:
 	QT_QPA_PLATFORM=$${QT_QPA_PLATFORM:-offscreen} QT_XCB_GL_INTEGRATION=none LIBGL_ALWAYS_SOFTWARE=1 \
 	    CLK_MHZ=$(CLK_MHZ) BAUD=$(BAUD) N=$(if $(filter command line,$(origin N)),$(N)) G=$(G) PIPE=$(PIPE) ACC_W=$(ACC_W) \
-	    AW_A=$(AW_A) AW_W=$(AW_W) W_D=$(W_D) AW_M=$(AW_M) AW_B=$(AW_B) AW_D=$(AW_D) STEP=$(STEP) \
+	    AW_A=$(AW_A) AW_W=$(AW_W) W_D=$(W_D) AW_M=$(AW_M) AW_B=$(AW_B) AW_D=$(AW_D) CLKGATE=$(CLKGATE) STEP=$(STEP) \
 	    GOAL=$(GOAL) MAP=$(MAP) DSP=$(DSP) PLACE=$(PLACE) ROUTE=$(ROUTE) RETIME=$(RETIME) \
 	    SYN_MARGIN=$(SYN_MARGIN) MAX_FANOUT=$(MAX_FANOUT) GW_OPTS="$(GW_OPTS)" \
 	    $(GW_SH) boards/tn20k/ttf_gowin.tcl
