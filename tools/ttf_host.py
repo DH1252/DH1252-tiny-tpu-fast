@@ -3,7 +3,11 @@
 against the reference arithmetic.
 
     python3 tools/ttf_host.py --port /dev/ttyUSB1 [--baud 115200] [--mhz 27] [--m 8]
-                              [--mnist DIR] [--images 1000]
+                              [--mnist DIR] [--images 1000] [--layers 1] [--selftest]
+
+When results differ, it prints where: per image, per output lane, and by how much.
+--selftest runs small synthetic networks (identity, bias, two k-blocks, random) to find
+which part of the core is wrong; --layers 1 checks the hidden layer alone.
 
 Without --mnist it runs the 64 test images stored in model/mnist_int8.json; with it, the
 first --images images of the MNIST test set (and reports the accuracy). For each batch of
@@ -97,6 +101,86 @@ def load_test(d):
     return x, list(yb)
 
 
+def check_inputs(bus, img):
+    """read the input rows back through the bus: the ACT RAMs and the bus map"""
+    pairs = tm.bus_writes(img, inputs_only=True)
+    back = bus.reads([ad for ad, _ in pairs])
+    bad = [(ad, w, b) for (ad, w), b in zip(pairs, back) if w != b]
+    if bad:
+        print("input read-back: %d of %d words differ, first at %04x: wrote %08x read %08x"
+              % ((len(bad), len(pairs)) + bad[0]))
+    else:
+        print("input read-back: %d words ok" % len(pairs))
+
+
+def report(got, want, n):
+    """where the outputs differ: per image, per lane (output index mod N), by how much"""
+    lanes = [0] * n
+    rows, diffs = [], []
+    for i, (g, w) in enumerate(zip(got, want)):
+        wrong = [j for j in range(len(w)) if g[j] != w[j]]
+        rows.append(len(wrong))
+        for j in wrong:
+            lanes[j % n] += 1
+            diffs.append(g[j] - w[j])
+    tot = sum(len(w) for w in want)
+    print("  mismatches: %d of %d values" % (len(diffs), tot))
+    print("  per image:  %s" % rows)
+    print("  per lane:   %s   (lane = output index mod %d)" % (lanes, n))
+    if diffs:
+        print("  got - want: min %d, max %d, mean |d| %.1f"
+              % (min(diffs), max(diffs), sum(abs(x) for x in diffs) / len(diffs)))
+    print("  image 0 want %s" % want[0][:16])
+    print("  image 0 got  %s" % got[0][:16])
+
+
+def run_net(bus, layers, x, n, name):
+    img = tm.Image(layers, len(x), n)
+    img.set_input(x)
+    bus.writes(tm.bus_writes(img))
+    bus.write(tm.A_CTRL, 1)
+    while not (bus.read(tm.A_STATUS) & 2):
+        pass
+    cyc = bus.read(tm.A_CYCLES)
+    got = tm.unpack_output(img, bus.reads(tm.bus_output_words(img)))
+    want = tm.net_ref(layers, x)
+    ok = got == want
+    print("%-34s %6d clocks  %s" % (name, cyc, "ok" if ok else "WRONG"))
+    if not ok:
+        report(got, want, n)
+    return ok
+
+
+def selftest(bus, n, m_max):
+    """networks small enough to reason about: which part of the core is wrong"""
+    import random
+    rng = random.Random(1)
+    oks = []
+    eye = [[1 if k == j else 0 for j in range(n)] for k in range(n)]
+    x = [[rng.randint(-128, 127) for _ in range(n)] for _ in range(4)]
+    # out = x: one tile, no bias, no scaling (s0 0, mult 1, s1 0), no ReLU
+    oks.append(run_net(bus, [tm.Layer(eye, [0] * n, 0, 1, 0, 0)], x, n, "identity, 1 tile, 4 rows"))
+    oks.append(run_net(bus, [tm.Layer(eye, [0] * n, 0, 1, 0, 0)], x[:1], n, "identity, 1 tile, 1 row"))
+    # out = 2x + 3 lanes' bias, ReLU: checks bias, mult and ReLU
+    two = [[2 if k == j else 0 for j in range(n)] for k in range(n)]
+    oks.append(run_net(bus, [tm.Layer(two, list(range(-3, n - 3)), 0, 1, 0, 1)],
+                       [[rng.randint(-60, 60) for _ in range(n)] for _ in range(4)], n,
+                       "2x + bias, ReLU"))
+    # out = x1 + x2 over two k-blocks: checks the accumulator RAM
+    stack = eye + eye
+    oks.append(run_net(bus, [tm.Layer(stack, [0] * n, 0, 1, 0, 0)],
+                       [[rng.randint(-60, 60) for _ in range(2 * n)] for _ in range(4)], n,
+                       "x[0:N] + x[N:2N], 2 k-blocks"))
+    for seed, dims, m in ((2, [n + 3, n + 1], 1), (3, [3 * n, 2 * n, n + 2], 4),
+                          (4, [5 * n + 1, 3 * n, 10], min(8, m_max))):
+        r2 = random.Random(seed)
+        ls = [tm.random_layer(r2, dims[i], dims[i + 1], i < len(dims) - 2) for i in range(len(dims) - 1)]
+        xs = [[r2.randint(-128, 127) for _ in range(dims[0])] for _ in range(m)]
+        oks.append(run_net(bus, ls, xs, n, "random %s, batch %d" % (dims, m)))
+    print("selftest: %d of %d ok" % (sum(oks), len(oks)))
+    return all(oks)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--port", required=True)
@@ -106,6 +190,10 @@ def main():
     ap.add_argument("--model", default=os.path.join(HERE, "..", "model", "mnist_int8.json"))
     ap.add_argument("--mnist", help="directory with the MNIST test idx .gz files")
     ap.add_argument("--images", type=int, default=1000)
+    ap.add_argument("--layers", type=int, default=0,
+                    help="run only the first LAYERS layers (diagnosis; 1: the hidden layer)")
+    ap.add_argument("--selftest", action="store_true",
+                    help="small synthetic networks first (identity, bias, random), then stop")
     a = ap.parse_args()
 
     bus = Bus(a.port, a.baud)
@@ -120,8 +208,13 @@ def main():
     if a.m > (1 << aw_m):
         sys.exit("--m %d is larger than the build's batch (%d)" % (a.m, 1 << aw_m))
 
+    if a.selftest:
+        sys.exit(0 if selftest(bus, n, 1 << aw_m) else 1)
+
     d = json.load(open(a.model))
     layers = [tm.Layer(l["w"], l["bias"], l["s0"], l["mult"], l["s1"], l["relu"]) for l in d["layers"]]
+    if a.layers:
+        layers = layers[:a.layers]
     if a.mnist:
         xs, ys = load_test(a.mnist)
         xs, ys = xs[:a.images], ys[:a.images]
@@ -142,6 +235,8 @@ def main():
         img.act = {}
         img.set_input(batch)
         bus.writes(tm.bus_writes(img, inputs_only=True))
+        if b0 == 0:
+            check_inputs(bus, img)
         bus.write(tm.A_CTRL, 1)
         while not (bus.read(tm.A_STATUS) & 2):
             pass
@@ -154,6 +249,8 @@ def main():
             cls = max(range(len(got[i])), key=lambda j: (got[i][j], -j))
             tot["ok"] += cls == ys[b0 + i]
         tot["cyc"] += cyc
+        if b0 == 0 and got != want:
+            report(got[:len(xs) - b0], want[:len(xs) - b0], n)
         if b0 == 0:
             print("batch of %d: %d clocks, %.1f MAC/clock of %d, %.0f images/s at %g MHz"
                   % (a.m, cyc, macs_img * a.m / cyc, n * n, a.m * a.mhz * 1e6 / cyc, a.mhz))
