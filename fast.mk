@@ -5,6 +5,8 @@
 #   make -f fast.mk quant MNIST=DIR  re-quantize the MNIST model (numpy; MNIST idx files in DIR)
 #   make -f fast.mk sim [M=8] [RANDOM=seed] [VERILATOR=1]   RTL testbench (iverilog or Verilator)
 #   make -f fast.mk tn20k [CLK_MHZ=100] [BAUD=3000000] [N=8 G=4 ...]   Tang Nano 20K bitstream
+#       tool settings: GOAL MAP DSP PLACE ROUTE RETIME SYN_MARGIN MAX_FANOUT GW_OPTS
+#       (boards/tn20k/ttf_gowin.tcl; defaults for speed, e.g. PLACE=3 or 4 to try harder)
 #   make -f fast.mk host PORT=/dev/ttyUSB1 [BAUD=...] [CLK_MHZ=...] [MNIST=DIR]  run on the board
 #   make -f fast.mk asic             OpenLane run of asic/config.json (sky130)
 #
@@ -46,7 +48,9 @@ endif
 tn20k:
 	QT_QPA_PLATFORM=$${QT_QPA_PLATFORM:-offscreen} QT_XCB_GL_INTEGRATION=none LIBGL_ALWAYS_SOFTWARE=1 \
 	    CLK_MHZ=$(CLK_MHZ) BAUD=$(BAUD) N=$(if $(filter command line,$(origin N)),$(N)) G=$(G) PIPE=$(PIPE) ACC_W=$(ACC_W) \
-	    AW_A=$(AW_A) AW_W=$(AW_W) W_D=$(W_D) AW_M=$(AW_M) AW_B=$(AW_B) AW_D=$(AW_D) GOAL=$(GOAL) STEP=$(STEP) \
+	    AW_A=$(AW_A) AW_W=$(AW_W) W_D=$(W_D) AW_M=$(AW_M) AW_B=$(AW_B) AW_D=$(AW_D) STEP=$(STEP) \
+	    GOAL=$(GOAL) MAP=$(MAP) DSP=$(DSP) PLACE=$(PLACE) ROUTE=$(ROUTE) RETIME=$(RETIME) \
+	    SYN_MARGIN=$(SYN_MARGIN) MAX_FANOUT=$(MAX_FANOUT) GW_OPTS="$(GW_OPTS)" \
 	    $(GW_SH) boards/tn20k/ttf_gowin.tcl
 
 host:

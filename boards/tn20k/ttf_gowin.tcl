@@ -6,9 +6,23 @@
 #   CLK_MHZ  core clock from the rPLL, 4 - 200 MHz (default 27: the oscillator, no PLL)
 #   BAUD     UART rate (default 115200; the BL616 also does 3000000)
 #   N G PIPE ACC_W AW_A AW_W W_D AW_M AW_B AW_D   core parameters (ttf_tn20k_top defaults)
-#   GOAL     synthesis goal: speed (default) or area
 #   STEP     all (default) or syn
-# Output: build/tn20k/<tag>/ttf/impl/pnr/ttf.fs; reports next to it.
+# Tool settings (defaults: built for speed with energy in mind, see "tool settings" below):
+#   GOAL       synthesis goal: timing (default), auto or area   (-opt_goal)
+#   MAP        LUT mapping 1 - 4 (default 3)                    (-map_option)
+#   DSP        multipliers in DSP blocks: dsp (default), auto or logic (-dsp_style)
+#   PLACE      placement 0 - 4 (default 2: timing first)        (-place_option)
+#   ROUTE      routing 0 - 2 (default 1: better result)         (-route_option)
+#   RETIME     retiming targets: all (default), dsp, bsram or none (-retiming_resource)
+#   SYN_MARGIN synthesis aims this factor above the clock (default 1.1)
+#   MAX_FANOUT synthesis fanout limit (default: the tool's, 1000)
+#   GW_OPTS    any other set_option pairs, "-name value; -name value"
+# Output: build/tn20k/<tag>/ttf/impl/pnr/ttf.fs; reports next to it. The end of the run
+# prints the timing report's Fmax and the resource use.
+#
+# Every option goes through try_option: an option or value this gw_sh does not know (the
+# synthesis options -opt_goal, -map_option, -dsp_style, -netlist_hierarchy came with Gowin's
+# Tcl guide SUG1220 2.0E, -retiming_resource with 2.1E) is reported and skipped.
 
 proc env_or {name default} {
   if {[info exists ::env($name)] && $::env($name) ne ""} { return $::env($name) }
@@ -21,7 +35,15 @@ proc try_option {args} {
 set root  [file normalize [file join [file dirname [info script]] .. ..]]
 set STEP  [env_or STEP all]
 set BAUD  [env_or BAUD 115200]
-set GOAL  [env_or GOAL speed]
+set GOAL  [env_or GOAL timing]
+if {$GOAL eq "speed"} { set GOAL timing }
+set MAP    [env_or MAP 3]
+set DSP    [env_or DSP dsp]
+set PLACE  [env_or PLACE 2]
+set ROUTE  [env_or ROUTE 1]
+set RETIME [env_or RETIME all]
+set SYN_MARGIN [env_or SYN_MARGIN 1.1]
+set MAX_FANOUT [env_or MAX_FANOUT ""]
 set CLK_MHZ [env_or CLK_MHZ ""]
 set PART  GW2AR-LV18QN88C8/I7
 
@@ -111,13 +133,55 @@ add_file [file join $root boards tn20k tangnano20k.cst]
 set_option -top_module ttf_gowin_top
 set_option -verilog_std v2001
 set_option -output_base_name ttf
-try_option -global_freq [format %.3f $FREQ]
+
+# ---- tool settings ----
+# Speed and energy pull the same way on this design more often than not: energy per
+# inference is power x time, the static share shrinks as the clock rises, and the
+# dynamic share is set by what switches (the RTL: clock enables, no idle toggling),
+# not by the clock. The settings that would cost energy without buying speed are left
+# out (LUT6 mapping, forced block RAM for the small RAMs, open-drain unused pins).
+#
+# synthesis
+try_option -global_freq [format %.3f [expr {$FREQ * $SYN_MARGIN}]]
+#   timing-driven synthesis
 try_option -opt_goal $GOAL
-try_option -print_all_synthesis_warning 1
+#   LUT5 mapping that may spend LUTs for timing (4, LUT5/LUT6, spends more for the last
+#   few per cent)
+try_option -map_option $MAP
+#   the 8 x 8 products and the 18 x 17 requantization in DSP blocks: faster and far less
+#   energy per multiply than LUT multipliers
+try_option -dsp_style $DSP
+#   one flat netlist: optimization across module boundaries (the PE array, the lanes)
+try_option -netlist_hierarchy 0
+#   no bypass logic around the RAMs: the core never reads and writes one address in
+#   the same clock (rtl/ttf_post.v, rtl/ttf_seq.v), so it would only add LUTs and delay
 try_option -rw_check_on_ram 0
-try_option -use_mspi_as_gpio 1
-try_option -use_sspi_as_gpio 1
-puts "ttf_gowin.tcl: $tag, [format %.4f $FREQ] MHz, goal $GOAL -> $out"
+#   the RAMs: block RAM for the big ones, distributed RAM or registers for the small
+#   (accumulators, biases, descriptors) - left to the tool
+try_option -ram_style auto
+if {$MAX_FANOUT ne ""} { try_option -max_fanout $MAX_FANOUT }
+try_option -print_all_synthesis_warning 1
+# place & route
+try_option -timing_driven 1
+try_option -place_option $PLACE
+try_option -route_option $ROUTE
+#   move registers into DSP / block RAM boundaries where it shortens paths
+try_option -retiming_resource $RETIME
+#   copy high-fanout drivers (the column weight buses, the run / host multiplexers)
+try_option -replicate_resources 1
+try_option -correct_hold_violation 1
+#   unused routing tied to VCC (the tool's default, stated)
+try_option -set_route_vcc 1
+#   unused pins stay inputs with a weak pull-up (default): open-drain outputs could pull
+#   current through the board's pull-ups
+try_option -unused_pin default
+# anything else, for experiments: GW_OPTS="-name value; -name value"
+foreach o [split [env_or GW_OPTS ""] ";"] {
+  set o [string trim $o]
+  if {$o ne ""} { try_option {*}$o }
+}
+puts "ttf_gowin.tcl: $tag, [format %.4f $FREQ] MHz (synthesis aims at [format %.1f [expr {$FREQ * $SYN_MARGIN}]]),\
+ goal $GOAL, map $MAP, dsp $DSP, place $PLACE, route $ROUTE, retime $RETIME -> $out"
 if {[catch {run $STEP} msg]} {
   puts "ttf_gowin.tcl: run $STEP failed. ERROR lines of the logs:"
   foreach d [list [file join $out ttf impl gwsynthesis] [file join $out ttf impl pnr]] {
@@ -131,4 +195,34 @@ if {[catch {run $STEP} msg]} {
     }
   }
   error "run $STEP failed"
+}
+
+# ---- summary: Fmax from the timing report, resource use from the place & route report ----
+proc slurp {pattern} {
+  set f [lindex [lsort [glob -nocomplain $pattern]] 0]
+  if {$f eq ""} { return "" }
+  set fh [open $f r]; set t [read $fh]; close $fh
+  return $t
+}
+set pnr [file join $out ttf impl pnr]
+set tr  [slurp [file join $pnr *.tr.html]]
+if {$tr ne ""} {
+  regsub -all {<[^>]+>} $tr " " tr
+  regsub -all {\s+} $tr " " tr
+  if {[regexp {Max Frequency Summary.*?([0-9.]+)\s*\(MHz\)\s*([0-9.]+)\s*\(MHz\)} $tr -> want got]} {
+    puts "ttf_gowin.tcl: clock $want MHz, Fmax $got MHz[expr {$got < $want ? "  -- TIMING NOT MET" : ""}]"
+  }
+}
+set rpt [slurp [file join $pnr *.rpt.txt]]
+foreach line [split $rpt "\n"] {
+  if {[regexp {^\s*(Logic|Register|CLS|BSRAM|DSP|SSRAM|ALU|LUT|MULT[0-9X]*)[^|]*\|\s*([0-9]+)\s*/\s*([0-9]+)} $line -> what used max]} {
+    puts "ttf_gowin.tcl: [format %-9s $what] $used / $max"
+  }
+}
+if {$tr ne ""} {
+  foreach k {Setup Hold} {
+    if {[regexp "Numbers of $k Violated Endpoints (\[0-9\]+)" $tr -> v]} {
+      puts "ttf_gowin.tcl: [string tolower $k] violations: $v"
+    }
+  }
 }

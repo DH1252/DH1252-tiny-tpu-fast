@@ -185,7 +185,7 @@ Baseline cycles per MNIST image have not been measured yet. That is phase 0 of `
 - **Baseline:** DE1-SoC (Cyclone V) with Quartus, JTAG and serial demos.
 - **Now:** `boards/tn20k/`.
   - A UART bridge with ping, write, burst write and read, and a 64-byte reply FIFO.
-  - A Gowin build (`ttf_gowin.tcl`) with the core clock from the rPLL (`CLK_MHZ`) and a speed synthesis goal.
+  - A Gowin build (`ttf_gowin.tcl`) with the core clock from the rPLL (`CLK_MHZ`). Its tool settings aim at speed without spending energy for nothing (C18).
   - The PC side is `tools/ttf_host.py`. It checks every result bit for bit and reports clocks, MACs per clock and images per second.
   - Default fit: N = 8, G = 4, ACC_W = 24, 6,400 weight rows (exactly the MNIST network), batch up to 16. That is an estimated 35 of 46 block RAMs.
 - **Status:** not built yet.
@@ -205,6 +205,33 @@ Baseline cycles per MNIST image have not been measured yet. That is phase 0 of `
   - **Clock-level model:** `model/ttf_model.py`. It checks N = 4, 8, 16, G = 1, 2, 4, both PIPE settings, random multi-layer networks and the MNIST network.
   - **RTL testbench:** `sim/tb_ttf_core.v`, using images from `tools/ttf_image.py` (`make -f fast.mk sim`). Not run yet.
   - **Elaboration:** every new file is elaborated with slang in several configurations, and passes.
+
+### C18. Gowin tool settings for speed and energy
+
+- **Baseline:** Quartus projects for the DE1-SoC with the tool defaults. The PQSE-style Gowin flow this script started from asked for `-opt_goal speed`, which is not a valid value, so it was skipped.
+- **Now:** every option is taken from Gowin's Tcl guide (SUG1220-2.1E) and can be overridden from the environment. Each one goes through `try_option`, so an older gw_sh reports and skips what it doesn't know.
+
+  | Option | Value | Why |
+  |---|---|---|
+  | `-global_freq` | clock × 1.1 (`SYN_MARGIN`) | synthesis aims a little above the target |
+  | `-opt_goal` | timing | timing-driven synthesis |
+  | `-map_option` | 3 | LUT5 mapping that may spend LUTs for timing; 4 (LUT5/LUT6) is left out, as it spends more for the last few per cent |
+  | `-dsp_style` | dsp | the 8 × 8 products and the requantization multiplies in DSP blocks: faster and far less energy per multiply than LUTs |
+  | `-netlist_hierarchy` | 0 | flat netlist, optimization across the PE and lane boundaries |
+  | `-rw_check_on_ram` | 0 | no bypass logic: the core never reads and writes one address in the same clock |
+  | `-ram_style` | auto | block RAM for the big RAMs, distributed RAM for the small ones; forcing block RAM would waste blocks on the accumulators |
+  | `-timing_driven` | 1 | |
+  | `-place_option` | 2 | placement with timing first (3 or 4: try harder) |
+  | `-route_option` | 1 | better routing at the cost of run time |
+  | `-retiming_resource` | all | registers moved across DSP and block RAM boundaries |
+  | `-replicate_resources` | 1 | copies of high-fanout drivers (the column weight buses, the run / host multiplexers) |
+  | `-correct_hold_violation`, `-set_route_vcc` | 1 | the defaults, stated |
+  | `-unused_pin` | default | inputs with a weak pull-up; open drain could pull current through the board's pull-ups |
+
+  The I/O-as-GPIO options (`-use_mspi_as_gpio`, `-use_sspi_as_gpio`) are gone; this design uses none of those pins.
+- **Why:** on this design, speed and energy mostly pull the same way. Energy per inference is power × time. The static share shrinks as the clock rises, and the dynamic share depends on what switches (C6), not on the clock.
+- **Also:** the end of the run prints the timing report's Fmax, the setup and hold violations, and the resource use.
+- **Status:** checked with a Tcl interpreter against stand-ins for the Gowin commands, both as the 2.1E guide documents them and as an older version without the 2.0E/2.1E options. Not run with gw_sh yet.
 
 ## Not done yet
 
