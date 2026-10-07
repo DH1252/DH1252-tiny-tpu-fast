@@ -1,3 +1,7 @@
+> **tiny-tpu-fast** — a private working fork of tiny-tpu-v2/tiny-tpu (imported at 04ad692),
+> optimised for speed and energy per MAC: ASIC (sky130) target, Tang Nano 20K first.
+> See [PLAN.md](PLAN.md). Upstream has no licence: do not redistribute.
+
 # tiny-tpu
 
 A minimal tensor processing unit (TPU), reinvented from Google's TPU V2 and V1.
